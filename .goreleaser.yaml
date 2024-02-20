@@ -1,0 +1,42 @@
+project_name: "auto-approve"
+
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=0
+
+builds:
+  - goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - "-s -w -X github.com/vietanhduong/auto-approve/cmd.version={{.Version}} -X github.com/vietanhduong/auto-approve/cmd.commit={{.Commit}} -X github.com/vietanhduong/auto-approve/cmd.buildDate={{.Date}}"
+
+changelog:
+  skip: false
+  use: git
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: "Bug fixes"
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  name_template: "{{.Tag}}"
+
+archives:
+  - files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ .Tag }}-next"

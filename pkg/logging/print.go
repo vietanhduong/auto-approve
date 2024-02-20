@@ -7,8 +7,6 @@ import (
 	"sync"
 )
 
-var stdout = os.Stdout
-
 type printer struct {
 	print  func(prefix string, a ...any)
 	printf func(prefix, format string, a ...any)
@@ -20,7 +18,7 @@ var (
 )
 
 func init() {
-	log.SetOutput(stdout)
+	log.SetOutput(os.Stdout)
 	log.SetFlags(0)
 	DisableGitHubFormat()
 }

@@ -1,13 +1,5 @@
 package logging
 
-func Info(arg ...any) {
-	instance.print("::info::", arg...)
-}
-
-func Infof(format string, arg ...any) {
-	instance.printf("::info::", format, arg...)
-}
-
 func Debug(msg ...any) {
 	instance.print("::debug::", msg...)
 }
