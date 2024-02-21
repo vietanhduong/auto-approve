@@ -32,12 +32,11 @@ The `auto-approve` command requires a GitHub Personal Access Token (PAT) to `get
 
 ```console
 $ auto-approve --help
-
 Auto-Approve the input Pull Request
 to bypass the "Require at least 1 reviewer" of GitHub.
 
 Usage:
-  auto-approve [flags]
+  auto-approve PR_NUMBER [flags]
 
 Examples:
 $ cat "$(git rev-parse --show-toplevel)/AUTOAPPROVE"
@@ -46,16 +45,15 @@ $ cat "$(git rev-parse --show-toplevel)/AUTOAPPROVE"
 
 $ export GH_TOKEN=$GITHUB_TOKEN
 $ export GITHUB_REPOSITORY="<owner>/<repo>"
-$ auto-approve --pr $PR_NUMBER --comment "LGTM!"
+$ auto-approve $PR_NUMBER --comment "LGTM!"
 
 
 Flags:
   -f, --aafile string       Auto-approve file. Leave empty for discovering the file in the repository.
   -b, --comment string      Approve comment body. (default "Auto Approved")
-  -t, --gh-token string     GitHub token. (default "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")
+  -t, --gh-token string     GitHub token.
       --github-log-format   Output in GitHub Action log format.
   -h, --help                help for auto-approve
-  -p, --pr int              Pull request number. (default -1)
-  -r, --repo string         GitHub repository. Format: owner/repo (default "KyberNetwork/kyber-infra-v2")
+  -r, --repo string         GitHub repository. Format: owner/repo
   -v, --version             Print version info.
 ```

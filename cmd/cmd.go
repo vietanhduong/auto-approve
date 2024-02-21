@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -15,13 +16,12 @@ func NewCommand() *cobra.Command {
 	var ghToken string
 	var aaFilePath string
 	var githubLogFormat bool
-	var prNumber int
 	var githubRepo string
 	var version bool
 	var commentBody string
 
 	cmd := &cobra.Command{
-		Use:   "auto-approve",
+		Use:   "auto-approve PR_NUMBER",
 		Short: "Auto-Approve the input Pull Request",
 		Long: `Auto-Approve the input Pull Request
 to bypass the "Require at least 1 reviewer" of GitHub.`,
@@ -31,8 +31,9 @@ to bypass the "Require at least 1 reviewer" of GitHub.`,
 
 $ export GH_TOKEN=$GITHUB_TOKEN
 $ export GITHUB_REPOSITORY="<owner>/<repo>"
-$ auto-approve --pr $PR_NUMBER --comment "LGTM!"
+$ auto-approve $PR_NUMBER --comment "LGTM!"
 `,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if version {
 				printVersion()
@@ -48,6 +49,13 @@ $ auto-approve --pr $PR_NUMBER --comment "LGTM!"
 				logging.Errorf("GitHub token is required.")
 				os.Exit(1)
 			}
+
+			prNumber, _ := strconv.ParseInt(args[0], 10, 32)
+			if prNumber <= 0 {
+				logging.Errorf("Invalid Pull Request number: %s", args[0])
+				os.Exit(1)
+			}
+
 			if prNumber == -1 {
 				logging.Errorf("Pull Request number is required.")
 				os.Exit(1)
@@ -89,6 +97,11 @@ $ auto-approve --pr $PR_NUMBER --comment "LGTM!"
 				os.Exit(0)
 			}
 
+			if pr.Author == user {
+				logging.Notice("The Pull Request author is the same as the current user.")
+				os.Exit(0)
+			}
+
 			aaFile, err := parseAAFile(aaFilePath)
 			if err != nil {
 				logging.Errorf("parse AUTOAPPROVE file: %v", err)
@@ -110,7 +123,7 @@ $ auto-approve --pr $PR_NUMBER --comment "LGTM!"
 			req := github.SubmitReviewRequest{
 				Owner:  owner,
 				Repo:   repo,
-				Number: prNumber,
+				Number: int(prNumber),
 				Body:   commentBody,
 				Event:  github.SubmitEventApprove,
 			}
@@ -122,7 +135,6 @@ $ auto-approve --pr $PR_NUMBER --comment "LGTM!"
 	}
 	cmd.PersistentFlags().BoolVarP(&version, "version", "v", false, "Print version info.")
 	cmd.Flags().StringVarP(&ghToken, "gh-token", "t", os.Getenv("GH_TOKEN"), "GitHub token.")
-	cmd.Flags().IntVarP(&prNumber, "pr", "p", -1, "Pull request number.")
 	cmd.Flags().StringVarP(&githubRepo, "repo", "r", os.Getenv("GITHUB_REPOSITORY"), "GitHub repository. Format: owner/repo")
 	cmd.Flags().StringVarP(&aaFilePath, "aafile", "f", "", "Auto-approve file. Leave empty for discovering the file in the repository.")
 	cmd.Flags().BoolVar(&githubLogFormat, "github-log-format", false, "Output in GitHub Action log format.")
