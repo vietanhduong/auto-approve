@@ -58,22 +58,10 @@ func TestAAFile_Match(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:     "negation",
-			raw:      "!path/to/test @user1 @user2",
-			path:     "path/to/file",
-			expected: AAFile{{Path: "!path/to/test", Users: []string{"user1", "user2"}}},
-		},
-		{
-			name:     "negation with wildcard",
-			raw:      "!path/test/* @user1 @user2",
-			path:     "path/to/file",
-			expected: AAFile{{Path: "!path/test/*", Users: []string{"user1", "user2"}}},
-		},
-		{
 			name: "match multiple",
 			raw: `path/to/* @user1 @user2
-match/* @user3 @user4
-path/to/**/file @user3 @user4`,
+		match/* @user3 @user4
+		path/to/**/file @user3 @user4`,
 			path: "path/to/file",
 			expected: AAFile{
 				{Path: "path/to/*", Users: []string{"user1", "user2"}},
@@ -92,6 +80,12 @@ path/to/**/file @user3 @user4`,
 			path:     "path/to/file",
 			expected: AAFile{{Path: "path/to", Users: []string{"user1"}}},
 		},
+		{
+			name:     "match folder wildcard",
+			raw:      `path/**/test @user1`,
+			path:     "path/to/test/file",
+			expected: AAFile{{Path: "path/**/test", Users: []string{"user1"}}},
+		},
 	}
 
 	for _, tt := range testcases {
@@ -99,7 +93,7 @@ path/to/**/file @user3 @user4`,
 			aafile, _, err := ParseRaw([]byte(tt.raw))
 			require.NoError(t, err)
 			matched := aafile.Match(tt.path)
-			if diff := cmp.Diff(tt.expected, matched, cmpopts.EquateEmpty()); diff != "" {
+			if diff := cmp.Diff(tt.expected, matched, cmpopts.EquateEmpty(), cmpopts.IgnoreUnexported(Rule{})); diff != "" {
 				t.Errorf("Match() mismatch (-got +want):\n%s", diff)
 			}
 		})

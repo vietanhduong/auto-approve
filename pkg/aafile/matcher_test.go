@@ -1,90 +1,57 @@
 package aafile
 
 import (
+	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func tempLoc() string {
-	return filepath.Join(os.TempDir(), "snag/test/stuff")
-}
-
-func createFiles(t *testing.T, names []string) {
-	for _, name := range names {
-		f, err := os.Create(filepath.Join(tempLoc(), name))
-		require.NoError(t, err, "Error creating temp file %s", err)
-		f.Close()
-	}
-}
-
-func deleteFiles(t *testing.T, names []string) {
-	for _, name := range names {
-		err := os.Remove(filepath.Join(tempLoc(), name))
-		require.NoError(t, err, "Error removing temp file %s", err)
-	}
+type patternTest struct {
+	Name    string          `json:"name"`
+	Pattern string          `json:"pattern"`
+	Paths   map[string]bool `json:"paths"`
+	Focus   bool            `json:"focus"`
 }
 
 func TestMatch(t *testing.T) {
-	v := tempLoc()
-	require.NoError(t, os.MkdirAll(v, 0o777))
-	defer os.RemoveAll(os.TempDir() + "/snag")
+	data, err := os.ReadFile("testdata/patterns.json")
+	require.NoError(t, err)
 
-	// blank line
-	assert.False(t, match("", v))
+	var tests []patternTest
+	err = json.Unmarshal(data, &tests)
+	require.NoError(t, err)
 
-	// a comment
-	assert.False(t, match("#a comment", v))
+	focus := false
+	for _, test := range tests {
+		if test.Focus {
+			focus = true
+		}
+	}
 
-	// regular match no slash
-	assert.True(t, match("gitglob.go", "gitglob.go"))
+	for _, test := range tests {
+		if test.Focus != focus {
+			continue
+		}
 
-	// negation no slash
-	assert.False(t, match("!gitglob.go", "gitglob.go"))
+		t.Run(test.Name, func(t *testing.T) {
+			for path, shouldMatch := range test.Paths {
+				pattern, err := newPattern(test.Pattern)
+				require.NoError(t, err)
 
-	// match with slash
-	tmpFiles := []string{"foo.txt"}
-	createFiles(t, tmpFiles)
-	assert.True(t, match(tempLoc()+"/foo.txt", v+"/foo.txt"))
-	deleteFiles(t, tmpFiles)
+				// Debugging tips:
+				// - Print the generated regex: `fmt.Println(pattern.regex.String())`
+				// - Only run a single case by adding `"focus" : true` to the test in the JSON file
 
-	// negate match with slash
-	tmpFiles = []string{"foo.txt"}
-	createFiles(t, tmpFiles)
-	assert.False(t, match("!"+tempLoc()+"/foo.txt", v+"/foo.txt"))
-	deleteFiles(t, tmpFiles)
-
-	// directory
-	assert.True(t, match(tempLoc(), v))
-
-	// directory with trailing slash
-	assert.True(t, match(tempLoc()+"/", v))
-
-	// star matching
-	tmpFiles = []string{"foo.txt"}
-	createFiles(t, tmpFiles)
-	assert.True(t, match(tempLoc()+"/*.txt", v+"/foo.txt"))
-	assert.False(t, match(tempLoc()+"/*.txt", v+"/somedir/foo.txt"))
-	deleteFiles(t, tmpFiles)
-
-	// double star prefix
-	assert.True(t, match("**/foo.txt", v+"/hello/foo.txt"))
-	assert.True(t, match("**/foo.txt", v+"/some/dirs/foo.txt"))
-
-	// double star suffix
-	assert.True(t, match(tempLoc()+"/hello/**", v+"/hello/foo.txt"))
-	assert.False(t, match(tempLoc()+"/hello/**", v+"/some/dirs/foo.txt"))
-
-	// double star in path
-	assert.True(t, match(tempLoc()+"/hello/**/world.txt", v+"/hello/world.txt"))
-	assert.True(t, match(tempLoc()+"/hello/**/world.txt", v+"/hello/stuff/world.txt"))
-	assert.False(t, match(tempLoc()+"/hello/**/world.txt", v+"/some/dirs/foo.txt"))
-
-	// negate doubl start patterns
-	assert.False(t, match("!**/foo.txt", v+"/hello/foo.txt"))
-	assert.False(t, match("!"+tempLoc()+"/hello/**", v+"/hello/foo.txt"))
-	assert.False(t, match("!"+tempLoc()+"/hello/**/world.txt", v+"/hello/world.txt"))
+				actual := pattern.match(path)
+				if shouldMatch {
+					assert.True(t, actual, "expected pattern %s to match path %s", test.Pattern, path)
+				} else {
+					assert.False(t, actual, "expected pattern %s to not match path %s", test.Pattern, path)
+				}
+			}
+		})
+	}
 }

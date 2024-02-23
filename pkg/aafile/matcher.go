@@ -1,150 +1,177 @@
 package aafile
 
 import (
-	"log"
-	"os"
-	"path"
+	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
-// Borrow from https://github.com/zabawaba99/go-gitignore
-
-const dblAsterisks = "**"
-
-// match matches patterns in the same manner that gitignore does.
-// Reference https://git-scm.com/docs/gitignore.
-func match(pattern, value string) bool {
-	// A blank line matches no files, so it can serve as a separator for readability.
-	if pattern == "" {
-		return false
-	}
-
-	// A line starting with # serves as a comment. Put a backslash ("\") in front of the first hash for patterns that begin with a hash.
-	if strings.HasPrefix(pattern, "#") {
-		return false
-	}
-
-	// Trailing spaces are ignored unless they are quoted with backslash ("\").
-	pattern = strings.TrimSuffix(pattern, " ")
-
-	// An optional prefix "!" which negates the pattern; any matching file
-	// excluded by a previous pattern will become included again. It is not
-	// possible to re-include a file if a parent directory of that file is excluded.
-	// Git doesn’t list excluded directories for performance reasons, so any patterns
-	// on contained files have no effect, no matter where they are defined.
-	// Put a backslash ("\") in front of the first "!" for patterns that begin
-	// with a literal "!", for example, "\!important!.txt".
-	negate := strings.HasPrefix(pattern, "!")
-	if negate {
-		pattern = strings.TrimPrefix(pattern, "!")
-	}
-
-	// If the pattern ends with a slash, it is removed for the purpose of the
-	// following description, but it would only find a match with a directory.
-	// In other words, foo/ will match a directory foo and paths underneath it,
-	// but will not match a regular file or a symbolic link foo (this is consistent
-	// with the way how pathspec works in general in Git).
-	pattern = strings.TrimSuffix(pattern, string(os.PathSeparator))
-
-	// Two consecutive asterisks ("**") in patterns matched
-	// against full pathname may have special meaning:
-	if strings.Contains(pattern, dblAsterisks) {
-		result := evalDblAsterisk(pattern, value)
-		if negate {
-			result = !result
-		}
-		return result
-	}
-
-	// If the pattern does not contain a slash /, Git treats it as a shell glob
-	// pattern and checks for a match against the pathname relative to the location
-	// of the .gitignore file (relative to the toplevel of the work tree if not from
-	// a .gitignore file).
-	if !strings.Contains(pattern, string(os.PathSeparator)) {
-		m, err := filepath.Glob(pattern)
-		if err != nil {
-			// maybe log this?
-			log.Printf("ERROR %s\n", err)
-			return false
-		}
-
-		var found bool
-		for _, v := range m {
-			if v == value {
-				found = true
-				break
-			}
-		}
-
-		if negate {
-			return !found
-		}
-		return found
-	}
-
-	// Otherwise, Git treats the pattern as a shell glob suitable for consumption by
-	// fnmatch(3) with the FNM_PATHNAME flag: wildcards in the pattern will not match
-	// a / in the pathname. For example, "Documentation/*.html" matches
-	// "Documentation/git.html" but not "Documentation/ppc/ppc.html" or
-	// "tools/perf/Documentation/perf.html".
-
-	// A leading slash matches the beginning of the pathname. For example, "/*.c" matches "cat-file.c" but not "mozilla-sha1/sha1.c".
-
-	matched, err := path.Match(pattern, value)
-	if err != nil {
-		// maybe log?
-		return false
-	}
-
-	if negate {
-		return !matched
-	}
-	return matched
+type pattern struct {
+	pattern             string
+	regex               *regexp.Regexp
+	leftAnchoredLiteral bool
 }
 
-func evalDblAsterisk(pattern, value string) bool {
-	// A leading "**" followed by a slash means match in all directories.
-	// For example, "**/foo" matches file or directory "foo" anywhere,
-	// the same as pattern "foo". "**/foo/bar" matches file or directory
-	// "bar" anywhere that is directly under directory "foo".
-	if strings.HasPrefix(pattern, dblAsterisks) {
-		pattern = strings.TrimPrefix(pattern, dblAsterisks)
-		return strings.HasSuffix(value, pattern)
+// newPattern creates a new pattern struct from a gitignore-style pattern string
+func newPattern(patternStr string) (pattern, error) {
+	pat := pattern{pattern: patternStr}
+
+	if !strings.ContainsAny(patternStr, "*?\\") && patternStr[0] == '/' {
+		pat.leftAnchoredLiteral = true
+	} else {
+		patternRegex, err := buildPatternRegex(patternStr)
+		if err != nil {
+			return pattern{}, err
+		}
+		pat.regex = patternRegex
 	}
 
-	// A trailing "/**" matches everything inside. For example, "abc/**"
-	// matches all files inside directory "abc", relative to the location
-	// of the .gitignore file, with infinite depth.
-	if strings.HasSuffix(pattern, dblAsterisks) {
-		pattern = strings.TrimSuffix(pattern, dblAsterisks)
-		return strings.HasPrefix(value, pattern)
-	}
+	return pat, nil
+}
 
-	// A slash followed by two consecutive asterisks then a slash matches
-	// zero or more directories. For example, "a/**/b" matches "a/b",
-	// /"a/x/b", "a/x/y/b" and so on.
-	parts := strings.Split(pattern, dblAsterisks)
-	for i, part := range parts {
-		switch i {
-		case 0:
-			if !strings.HasPrefix(value, part) {
-				return false
-			}
-		case len(parts) - 1: // last part
-			part = strings.TrimPrefix(part, string(os.PathSeparator))
-			return strings.HasSuffix(value, part)
-		default:
-			if !strings.Contains(value, part) {
-				return false
-			}
+// match tests if the path provided matches the pattern
+func (p pattern) match(testPath string) bool {
+	// Normalize Windows-style path separators to forward slashes
+	testPath = filepath.ToSlash(testPath)
+
+	if p.leftAnchoredLiteral {
+		prefix := p.pattern
+
+		// Strip the leading slash as we're anchored to the root already
+		if prefix[0] == '/' {
+			prefix = prefix[1:]
 		}
 
-		// trim evaluated text
-		index := strings.Index(value, part) + len(part)
-		value = value[index:]
+		// If the pattern ends with a slash we can do a simple prefix match
+		if prefix[len(prefix)-1] == '/' {
+			return strings.HasPrefix(testPath, prefix)
+		}
+
+		// If the strings are the same length, check for an exact match
+		if len(testPath) == len(prefix) {
+			return testPath == prefix
+		}
+
+		// Otherwise check if the test path is a subdirectory of the pattern
+		if len(testPath) > len(prefix) && testPath[len(prefix)] == '/' {
+			return testPath[:len(prefix)] == prefix
+		}
+
+		// Otherwise the test path must be shorter than the pattern, so it can't match
+		return false
 	}
 
-	// Other consecutive asterisks are considered invalid.
-	return false
+	return p.regex.MatchString(testPath)
+}
+
+// buildPatternRegex compiles a new regexp object from a gitignore-style pattern string
+func buildPatternRegex(pattern string) (*regexp.Regexp, error) {
+	// Handle specific edge cases first
+	switch {
+	case strings.Contains(pattern, "***"):
+		return nil, fmt.Errorf("pattern cannot contain three consecutive asterisks")
+	case pattern == "":
+		return nil, fmt.Errorf("empty pattern")
+	case pattern == "/":
+		// "/" doesn't match anything
+		return regexp.Compile(`\A\z`)
+	}
+
+	segs := strings.Split(pattern, "/")
+
+	if segs[0] == "" {
+		// Leading slash: match is relative to root
+		segs = segs[1:]
+	} else {
+		// No leading slash - check for a single segment pattern, which matches
+		// relative to any descendent path (equivalent to a leading **/)
+		if len(segs) == 1 || (len(segs) == 2 && segs[1] == "") {
+			if segs[0] != "**" {
+				segs = append([]string{"**"}, segs...)
+			}
+		}
+	}
+
+	if len(segs) > 1 && segs[len(segs)-1] == "" {
+		// Trailing slash is equivalent to "/**"
+		segs[len(segs)-1] = "**"
+	}
+
+	sep := "/"
+
+	lastSegIndex := len(segs) - 1
+	needSlash := false
+	var re strings.Builder
+	re.WriteString(`\A`)
+	for i, seg := range segs {
+		switch seg {
+		case "**":
+			switch {
+			case i == 0 && i == lastSegIndex:
+				// If the pattern is just "**" we match everything
+				re.WriteString(`.+`)
+			case i == 0:
+				// If the pattern starts with "**" we match any leading path segment
+				re.WriteString(`(?:.+` + sep + `)?`)
+				needSlash = false
+			case i == lastSegIndex:
+				// If the pattern ends with "**" we match any trailing path segment
+				re.WriteString(sep + `.*`)
+			default:
+				// If the pattern contains "**" we match zero or more path segments
+				re.WriteString(`(?:` + sep + `.+)?`)
+				needSlash = true
+			}
+
+		case "*":
+			if needSlash {
+				re.WriteString(sep)
+			}
+
+			// Regular wildcard - match any characters except the separator
+			re.WriteString(`[^` + sep + `]+`)
+			needSlash = true
+
+		default:
+			if needSlash {
+				re.WriteString(sep)
+			}
+
+			escape := false
+			for _, ch := range seg {
+				if escape {
+					escape = false
+					re.WriteString(regexp.QuoteMeta(string(ch)))
+					continue
+				}
+
+				// Other pathspec implementations handle character classes here (e.g.
+				// [AaBb]), but CODEOWNERS doesn't support that so we don't need to
+				switch ch {
+				case '\\':
+					escape = true
+				case '*':
+					// Multi-character wildcard
+					re.WriteString(`[^` + sep + `]*`)
+				case '?':
+					// Single-character wildcard
+					re.WriteString(`[^` + sep + `]`)
+				default:
+					// Regular character
+					re.WriteString(regexp.QuoteMeta(string(ch)))
+				}
+			}
+
+			if i == lastSegIndex {
+				// As there's no trailing slash (that'd hit the '**' case), we
+				// need to match descendent paths
+				re.WriteString(`(?:` + sep + `.*)?`)
+			}
+
+			needSlash = true
+		}
+	}
+	re.WriteString(`\z`)
+	return regexp.Compile(re.String())
 }

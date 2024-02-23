@@ -16,6 +16,7 @@ func ParseRaw(raw []byte) (AAFile, []string, error) {
 	var ret AAFile
 	var warnings []string
 	var lc int
+	var err error
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	for scanner.Scan() {
 		lc++
@@ -29,6 +30,10 @@ func ParseRaw(raw []byte) (AAFile, []string, error) {
 		}
 		parts := strings.Split(line, " ")
 		r := Rule{Path: parts[0]}
+		if r.pattern, err = newPattern(r.Path); err != nil {
+			warnings = append(warnings, fmt.Sprintf("line %d: invalid pattern %s", lc, r.Path))
+			continue
+		}
 		if len(parts) > 1 {
 			r.Users = lo.Filter(lo.Map(parts[1:], func(s string, _ int) string {
 				if s[0] != '@' {

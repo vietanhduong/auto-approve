@@ -7,8 +7,9 @@ import (
 )
 
 type Rule struct {
-	Path  string
-	Users []string
+	Path    string
+	pattern pattern
+	Users   []string
 }
 
 type AAFile []Rule
@@ -18,7 +19,8 @@ func (f AAFile) Match(path string) AAFile {
 		if r.Path == path || r.Path == "*" || strings.HasPrefix(path, r.Path) {
 			return true
 		}
-		return match(r.Path, path)
+		return r.pattern.match(path)
+		// return ignore.Match(r.Path, path)
 	})
 	return records
 }
