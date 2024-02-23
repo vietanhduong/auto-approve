@@ -1,6 +1,10 @@
 package aafile
 
-import "github.com/samber/lo"
+import (
+	"strings"
+
+	"github.com/samber/lo"
+)
 
 type Rule struct {
 	Path  string
@@ -11,7 +15,7 @@ type AAFile []Rule
 
 func (f AAFile) Match(path string) AAFile {
 	records := lo.Filter(f, func(r Rule, _ int) bool {
-		if r.Path == path || r.Path == "*" {
+		if r.Path == path || r.Path == "*" || strings.HasPrefix(path, r.Path) {
 			return true
 		}
 		return match(r.Path, path)

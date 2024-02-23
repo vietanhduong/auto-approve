@@ -80,6 +80,18 @@ path/to/**/file @user3 @user4`,
 				{Path: "path/to/**/file", Users: []string{"user3", "user4"}},
 			},
 		},
+		{
+			name:     "match wildcard file",
+			raw:      `path/to/*.yaml @user1`,
+			path:     "path/to/file.yaml",
+			expected: AAFile{{Path: "path/to/*.yaml", Users: []string{"user1"}}},
+		},
+		{
+			name:     "match folder",
+			raw:      `path/to @user1`,
+			path:     "path/to/file",
+			expected: AAFile{{Path: "path/to", Users: []string{"user1"}}},
+		},
 	}
 
 	for _, tt := range testcases {

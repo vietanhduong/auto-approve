@@ -79,6 +79,8 @@ $ auto-approve $PR_NUMBER --comment "LGTM!"
 				logging.Notice("No AUTOAPPROVE file found. Skip auto-approving.")
 				os.Exit(0)
 			}
+			logging.Debugf("Using AUTOAPPROVE file: %s", aaFilePath)
+
 			gh := github.NewClient(ghToken)
 			user, err := gh.CurrentUser(cmd.Context())
 			if err != nil {
@@ -153,7 +155,11 @@ func parseRepo(ghRepo string) (owner, repo string) {
 
 func match(af aafile.AAFile, pr *github.PullRequest) bool {
 	for _, f := range pr.Files {
-		if len(af.Match(f.Name).MatchUser(pr.Author)) > 0 {
+		matchRules := af.Match(f.Name).MatchUser(pr.Author)
+		if len(matchRules) > 0 {
+			for _, r := range matchRules {
+				logging.Debugf("Matched rule: %s %s", r.Path, strings.Join(r.Users, ", "))
+			}
 			return true
 		}
 	}
